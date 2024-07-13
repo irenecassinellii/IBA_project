@@ -3,7 +3,7 @@ library(readxl)
 library(reshape2)
 library(ggplot2)
 
-trigger_ita <- read.csv("trigger_bel.csv")
+trigger_bel <- read.csv("trigger_bel.csv")
 
 trigger_bel <- na.omit(trigger_bel)
 trigger_bel <- trigger_bel %>% filter(Red.List.Category != "n/a")
