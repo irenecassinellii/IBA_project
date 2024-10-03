@@ -3,10 +3,14 @@ library(readxl)
 library(reshape2)
 library(ggplot2)
 
-trigger_bel <- read.csv("trigger_bel.csv")
+trigger_ita <- read.csv("IBA/trigger_ita.csv")
 
-trigger_bel <- na.omit(trigger_bel)
-trigger_bel <- trigger_bel %>% filter(Red.List.Category != "n/a")
+# pulisco la tabella da eventuali NA
+trigger_ita <- na.omit(trigger_ita)
+trigger_ita <- trigger_ita %>% filter(Red.List.Category != "n/a")
+
+
+# aggiungo una colonna "peso" che mi indica il valore numerico associato a ogni categoria IUCN
 
 aggiungi_pesi_IUCN <- function(df) {
   iucn_weights <- data.frame(
@@ -19,22 +23,40 @@ aggiungi_pesi_IUCN <- function(df) {
   return(df_weights)
 }
 
-trigger_bel <- aggiungi_pesi_IUCN(trigger_bel)
+trigger_ita <- aggiungi_pesi_IUCN(trigger_ita)
 
-species_IUCN <- trigger_bel %>%
+
+################ Creare tabella pre_RLI_ita ##############
+
+# prima creo un dataframe che mi estrae la lista di specie univoche + valore IUCN . 
+species_IUCN <- trigger_ita %>%
   select(Species, Red.List.Category, peso) %>%
   distinct()
 
-iba_matrix <- dcast(trigger_bel, Species ~ IBA, value.var = "IBA", fun.aggregate = length)
+# poi creo un dataframe con colonna 1 = lista di specie 
+# colonna 2-n = IBAs riempite con 1 o 0 se la sp è stata usata o no per quell'iba
+iba_matrix <- dcast(trigger_ita, Species ~ IBA, value.var = "IBA", fun.aggregate = length)
 
-pre_RLI_bel <- species_IUCN %>%
+# Unisco le due tabelle per ottenere la tabella finale pre_RLI_ita
+pre_RLI_ita <- species_IUCN %>%
   left_join(iba_matrix, by = "Species")
 
-unique_values <- lapply(pre_RLI_bel[, 4:ncol(pre_RLI_bel)], unique)
+# ora controllo che tutti i valori nelle colonne delle iba siano 0 o 1
+unique_values <- lapply(pre_RLI_ita[, 4:ncol(pre_RLI_ita)], unique)
 
+
+
+############## calcolare RLI index ##############
+
+# funzione per calcolare indice:
 calculate_rli <- function(df) {
+  # Estrarre i nomi delle colonne delle IBA
   iba_columns <- names(df)[4:ncol(df)]
+  
+  # Inizializzare un vettore per memorizzare gli indici
   iba_indices <- numeric(length(iba_columns))
+  
+  # Calcolare l'indice per ogni IBA
   for (i in seq_along(iba_columns)) {
     iba_col <- iba_columns[i]
     trigger_species <- df[df[[iba_col]] == 1, ]
@@ -42,13 +64,14 @@ calculate_rli <- function(df) {
     num_triggers <- sum(df[[iba_col]])
     iba_indices[i] <- peso_sum + num_triggers
   }
-
+  
+  # Creare una nuova riga per il data frame
   new_row <- c("RLI", NA, NA, iba_indices)
   return(new_row)
 }
 
-RLI_row <- calculate_rli(pre_RLI_bel)
+RLI_row <- calculate_rli(pre_RLI_ita)
 
-RLI_bel <- rbind(pre_RLI_bel, RLI_row)
+RLI_ita <- rbind(pre_RLI_ita, RLI_row)
 
-write.csv(RLI_bel, file = "RLI_bel.csv", row.names = FALSE)
+write.csv(RLI_ita, file = "RLI_ita.csv", row.names = FALSE)
