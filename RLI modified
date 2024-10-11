@@ -3,11 +3,11 @@ library(readxl)
 library(reshape2)
 library(ggplot2)
 
-trigger_ita <- read.csv("IBA/trigger_ita.csv")
+trigger_DE <- read.csv("C:/Users/irene/Desktop/IBA/trigger_DE.csv", header = TRUE, sep = ";")
 
 # pulisco la tabella da eventuali NA
-trigger_ita <- na.omit(trigger_ita)
-trigger_ita <- trigger_ita %>% filter(Red.List.Category != "n/a")
+trigger_DE <- na.omit(trigger_DE)
+trigger_DE <- trigger_DE %>% filter(Red.List.Category != "n/a")
 
 
 # aggiungo una colonna "peso" che mi indica il valore numerico associato a ogni categoria IUCN
@@ -23,26 +23,26 @@ aggiungi_pesi_IUCN <- function(df) {
   return(df_weights)
 }
 
-trigger_ita <- aggiungi_pesi_IUCN(trigger_ita)
+trigger_DE <- aggiungi_pesi_IUCN(trigger_DE)
 
 
-################ Creare tabella pre_RLI_ita ##############
+################ Creare tabella pre_RLI_DE ##############
 
 # prima creo un dataframe che mi estrae la lista di specie univoche + valore IUCN . 
-species_IUCN <- trigger_ita %>%
+species_IUCN <- trigger_DE %>%
   select(Species, Red.List.Category, peso) %>%
   distinct()
 
 # poi creo un dataframe con colonna 1 = lista di specie 
 # colonna 2-n = IBAs riempite con 1 o 0 se la sp è stata usata o no per quell'iba
-iba_matrix <- dcast(trigger_ita, Species ~ IBA, value.var = "IBA", fun.aggregate = length)
+iba_matrix <- dcast(trigger_DE, Species ~ IBA, value.var = "IBA", fun.aggregate = length)
 
-# Unisco le due tabelle per ottenere la tabella finale pre_RLI_ita
-pre_RLI_ita <- species_IUCN %>%
+# Unisco le due tabelle per ottenere la tabella finale pre_RLI_DE
+pre_RLI_DE <- species_IUCN %>%
   left_join(iba_matrix, by = "Species")
 
 # ora controllo che tutti i valori nelle colonne delle iba siano 0 o 1
-unique_values <- lapply(pre_RLI_ita[, 4:ncol(pre_RLI_ita)], unique)
+unique_values <- lapply(pre_RLI_DE[, 4:ncol(pre_RLI_DE)], unique)
 
 
 
@@ -70,8 +70,8 @@ calculate_rli <- function(df) {
   return(new_row)
 }
 
-RLI_row <- calculate_rli(pre_RLI_ita)
+RLI_row <- calculate_rli(pre_RLI_DE)
 
-RLI_ita <- rbind(pre_RLI_ita, RLI_row)
+RLI_DE <- rbind(pre_RLI_DE, RLI_row)
 
-write.csv(RLI_ita, file = "RLI_ita.csv", row.names = FALSE)
+write.csv(RLI_DE, file = "RLI_DE.csv", row.names = FALSE)
