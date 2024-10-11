@@ -1,0 +1,58 @@
+library(tidyverse)
+library(readxl)
+library(reshape2)
+library(ggplot2)
+
+trigger_DE <- read.csv("C:/Users/irene/Desktop/IBA/trigger_DE.csv", header = TRUE, sep = ";")
+
+trigger_DE <- na.omit(trigger_DE)
+trigger_DE <- trigger_DE %>% filter(Red.List.Category != "n/a")
+
+aggiungi_pesi_IUCN <- function(df) {
+  iucn_weights <- data.frame(
+    Red.List.Category = c("LC", "NT", "VU", "EN", "CR", "EW", "EX"),
+    peso = c(0, 1, 2, 3, 4, 5, 6)
+  )
+  df_weights <- df %>%
+    left_join(iucn_weights, by = "Red.List.Category")
+  
+  return(df_weights)
+}
+
+trigger_DE <- aggiungi_pesi_IUCN(trigger_DE)
+
+# Calcolo pre_RLI
+
+species_IUCN <- trigger_DE %>%
+  select(Species, Red.List.Category, peso) %>%
+  distinct()
+
+iba_matrix <- dcast(trigger_DE, Species ~ IBA, value.var = "IBA", fun.aggregate = length)
+
+pre_RLI_DE <- species_IUCN %>%
+  left_join(iba_matrix, by = "Species")
+
+unique_values <- lapply(pre_RLI_DE[, 4:ncol(pre_RLI_DE)], unique)
+
+# Calcolo RLI non modificato
+
+calculate_rli <- function(df) {
+  iba_columns <- names(df)[4:ncol(df)]
+  iba_indices <- numeric(length(iba_columns))
+  
+  for (i in seq_along(iba_columns)) {
+    iba_col <- iba_columns[i]
+    trigger_species <- df[df[[iba_col]] == 1, ]
+    peso_sum <- sum(trigger_species$peso)
+    num_triggers <- sum(df[[iba_col]])
+    iba_indices[i] <- 1 - (peso_sum / (6 * num_triggers))
+  }
+  new_row <- c("RLI", NA, NA, iba_indices)
+  return(new_row)
+}
+
+RLI_row <- calculate_rli(pre_RLI_DE)
+
+RLI_DE <- rbind(pre_RLI_DE, RLI_row)
+
+write.csv(RLI_DE, file = "og_RLI_DE.csv", row.names = FALSE)
