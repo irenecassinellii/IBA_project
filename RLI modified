@@ -9,9 +9,7 @@ trigger_DE <- read.csv("C:/Users/irene/Desktop/IBA/trigger_DE.csv", header = TRU
 trigger_DE <- na.omit(trigger_DE)
 trigger_DE <- trigger_DE %>% filter(Red.List.Category != "n/a")
 
-
 # aggiungo una colonna "peso" che mi indica il valore numerico associato a ogni categoria IUCN
-
 aggiungi_pesi_IUCN <- function(df) {
   iucn_weights <- data.frame(
     Red.List.Category = c("LC", "NT", "VU", "EN", "CR", "EW", "EX"),
@@ -43,7 +41,6 @@ pre_RLI_DE <- species_IUCN %>%
 
 # ora controllo che tutti i valori nelle colonne delle iba siano 0 o 1
 unique_values <- lapply(pre_RLI_DE[, 4:ncol(pre_RLI_DE)], unique)
-
 
 
 ############## calcolare RLI index ##############
