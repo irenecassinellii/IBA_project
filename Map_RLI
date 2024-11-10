@@ -1,0 +1,294 @@
+library(tidyverse)
+library(eurostat)
+library(leaflet)
+library(sf)
+library(scales)
+library(cowplot)
+library(ggthemes)
+library(giscoR)
+library(ggplot2)
+
+######## RLI modificato ########
+
+# Poligoni paesi EU
+get_eurostat_geospatial(resolution = 10, 
+                        nuts_level = 0, 
+                        year = 2016)
+
+SHP_0 <- get_eurostat_geospatial(resolution = 10, 
+                                 nuts_level = 0, 
+                                 year = 2016)
+
+SHP_0 %>% 
+  ggplot() +
+  geom_sf()
+
+EU27 <- eu_countries %>% 
+  filter(code != 'UK') %>% 
+  select(geo = code, name)
+
+SHP_27 <- SHP_0 %>% 
+  select(geo = NUTS_ID, geometry) %>% 
+  inner_join(EU27, by = "geo") %>% 
+  arrange(geo) %>% 
+  st_as_sf()
+
+SHP_27 %>% 
+  ggplot() +
+  geom_sf() +
+  scale_x_continuous(limits = c(-10, 35)) +
+  scale_y_continuous(limits = c(35, 65))
+
+ue_countries <- c("AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "EL",
+                  "ES", "FI", "FR", "HR", "HU", "IE", "IT", "LT", "LU",
+                  "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK")
+
+# Crea una lista vuota per salvare i dati
+rli_data_list <- list()
+
+# Ciclo per caricare ogni file dei paesi UE
+for (country_code in ue_countries) {
+  # Costruisci il percorso del file basato sul codice del paese
+  file_path <- paste0("C:/Users/irene/Desktop/IBA/RLI_", country_code, ".csv")
+  
+  # Verifica se il file esiste (evita errori se qualche file manca)
+  if (file.exists(file_path)) {
+    # Leggi il file CSV e aggiungi alla lista
+    rli_data_list[[country_code]] <- read.csv(file_path)
+  }
+}
+
+# Combina tutti i dataframes in un unico dataframe
+rli_data <- do.call(rbind, rli_data_list)
+
+# Visualizza i dati per confermare
+head(rli_data)
+
+# Aggiungi una colonna geo con il codice del paese estratto dai nomi delle righe
+rli_data <- rli_data %>%
+  mutate(geo = substr(row.names(rli_data), 1, 2))  # Prendi le prime 2 lettere di ciascun nome di riga
+
+# Calcola la media di RLI per ciascun paese
+rli_data_country_mod <- rli_data %>%
+  group_by(geo) %>%
+  summarise(rli = mean(Red_List_Index, na.rm = TRUE))
+
+# Verifica i dati 
+head(rli_data_country_mod)
+
+# Normalizza i valori RLI da 0 a 1
+min_rli <- min(rli_data_country_mod$rli, na.rm = TRUE)
+max_rli <- max(rli_data_country_mod$rli, na.rm = TRUE)
+
+rli_data_country_mod <- rli_data_country_mod %>%
+  mutate(rli_normalized = 1 - ((rli - min_rli) / (max_rli - min_rli)))
+
+# Esegui il join tra SHP_27 e i dati RLI medi per ciascun paese
+SHP_27_RLI_mod <- SHP_27 %>%
+  left_join(rli_data_country_mod, by = "geo")
+
+plot_RLI_mod <- SHP_27_RLI_mod %>%
+  ggplot() +
+  geom_sf(aes(fill = rli_normalized), color = "white", size = 0.2) +
+  scale_fill_gradientn(
+    colors = c("pink", "firebrick2", "darkred"),
+    name = "RLI"
+  ) +
+  labs(
+    title = "Modified RLI in IBAs of EU countries",
+  ) +
+  scale_x_continuous(limits = c(-10, 35)) +  
+  scale_y_continuous(limits = c(35, 65)) + 
+  theme_gray() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "right"
+  )
+
+# Viridis 
+SHP_27_RLI_mod %>%
+  ggplot() +
+  geom_sf(aes(fill = rli_normalized), color = "white", size = 0.2) +
+  scale_fill_viridis_c(name = "RLI") +
+  labs(
+    title = "Modified RLI in IBAs of EU countries",
+  ) +
+  scale_x_continuous(limits = c(-10, 35)) +  
+  scale_y_continuous(limits = c(35, 65)) +   
+  theme_gray() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "right"
+  )
+
+## RLI modificato (1 - n)
+## RLI = 1 poco prioritaria 
+## RLI = n altamente prioritaria (colori scuri, quindi RO e BG)
+
+
+######## RLI originale ########
+
+get_eurostat_geospatial(resolution = 10, 
+                        nuts_level = 0, 
+                        year = 2016)
+
+SHP_0 <- get_eurostat_geospatial(resolution = 10, 
+                                 nuts_level = 0, 
+                                 year = 2016)
+
+SHP_0 %>% 
+  ggplot() +
+  geom_sf()
+
+EU27 <- eu_countries %>% 
+  filter(code != 'UK') %>% 
+  select(geo = code, name)
+
+SHP_27 <- SHP_0 %>% 
+  select(geo = NUTS_ID, geometry) %>% 
+  inner_join(EU27, by = "geo") %>% 
+  arrange(geo) %>% 
+  st_as_sf()
+
+SHP_27 %>% 
+  ggplot() +
+  geom_sf() +
+  scale_x_continuous(limits = c(-10, 35)) +
+  scale_y_continuous(limits = c(35, 65))
+
+ue_countries <- c("AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "EL", "ES",
+                  "FI", "FR", "HR", "HU", "IE", "IT", "LT", "LU",
+                  "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK")
+
+# Crea una lista vuota per salvare i dati
+rli_data_list <- list()
+
+# Ciclo per caricare ogni file dei paesi UE
+for (country_code in ue_countries) {
+  # Costruisci il percorso del file basato sul codice del paese
+  file_path <- paste0("C:/Users/irene/Desktop/IBA/og_RLI_", country_code, ".csv")
+  
+  # Verifica se il file esiste (evita errori se qualche file manca)
+  if (file.exists(file_path)) {
+    # Leggi il file CSV e aggiungi alla lista
+    rli_data_list[[country_code]] <- read.csv(file_path)
+  }
+}
+
+# Combina tutti i dataframes in un unico dataframe
+rli_data <- do.call(rbind, rli_data_list)
+
+# Visualizza i dati per confermare
+head(rli_data)
+
+# Aggiungi una colonna geo con il codice del paese estratto dai nomi delle righe
+rli_data <- rli_data %>%
+  mutate(geo = substr(row.names(rli_data), 1, 2))  # Prendi le prime 2 lettere di ciascun nome di riga
+
+# Calcola la media di RLI per ciascun paese
+rli_data_country <- rli_data %>%
+  group_by(geo) %>%
+  summarise(rli = mean(Red_List_Index, na.rm = TRUE))
+
+# Verifica i dati per assicurarti che la struttura sia corretta
+head(rli_data_country)
+
+SHP_27_RLI_org <- SHP_27 %>%
+  left_join(rli_data_country, by = "geo")
+
+plot_RLI_org <- SHP_27_RLI_org %>%
+  ggplot() +
+  geom_sf(aes(fill = rli), color = "white", size = 0.2) +
+  scale_fill_gradientn(
+    colors = c("pink", "firebrick2", "darkred"),  
+    name = "RLI"
+  ) +
+  labs(
+    title = "Original RLI in IBAs of EU countries",
+  ) +
+  scale_x_continuous(limits = c(-10, 35)) + 
+  scale_y_continuous(limits = c(35, 65)) +   
+  theme_gray() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "right"
+  )
+
+# Viridis
+SHP_27_RLI_org %>%
+  ggplot() +
+  geom_sf(aes(fill = rli), color = "white", size = 0.2) +
+  scale_fill_viridis_c(name = "RLI") +
+  labs(
+    title = "Original RLI in IBAs of EU countries",
+  ) +
+  scale_x_continuous(limits = c(-10, 35)) +  
+  scale_y_continuous(limits = c(35, 65)) +   
+  theme_gray() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "right"
+  )
+
+## RLI originale (0 - 1)
+## RLI = 0 altamente prioritaria (zone più scure, cioè NL e ES)
+## RLI = 1 poco prioritaria (zone più chiare)
+
+# Combina i due plot
+combined_plot <- plot_grid(plot_RLI_org, plot_RLI_mod, ncol = 2)
+
+# Visualizza
+print(combined_plot)
+
+ggsave("C:/Users/irene/Desktop/TIROCINIO E TESI MAGISTRALE/Risultati/combined_RLI_plot.png", 
+       combined_plot, width = 12, height = 6, dpi = 300)
+
+
+######## Differenza tra RLI originale e RLI modificato ########
+
+# Assicurati che entrambe le geometrie abbiano lo stesso sistema di coordinate (CRS)
+SHP_27_RLI_org <- st_transform(SHP_27_RLI_org, crs = st_crs(SHP_27_RLI_mod))
+
+# Usa st_join per unire i due dataset
+SHP_27_RLI_combined <- SHP_27_RLI_org %>%
+  rename(rli_original = rli) %>%
+  st_join(SHP_27_RLI_mod %>% 
+          select(geo, rli_normalized), 
+          join = st_within)  
+
+# Calcola la differenza tra il RLI originale e quello normalizzato
+SHP_27_RLI_combined <- SHP_27_RLI_combined %>%
+  mutate(rli_difference = rli_original - rli_normalized)
+
+view(SHP_27_RLI_combined)
+
+# Visualizza la mappa della differenza
+SHP_27_RLI_combined %>%
+  ggplot() +
+  geom_sf(aes(fill = rli_difference), color = "white", size = 0.2) +
+  scale_fill_gradientn(
+    colours = c("firebrick2", "white", "blue"),
+    name = "RLI difference",
+    limits = c(-1, 1),              
+    oob = scales::squish            
+  ) +
+  labs(
+    title = "Difference between original and modified RLI"
+  ) +
+  scale_x_continuous(limits = c(-10, 35)) +  
+  scale_y_continuous(limits = c(35, 65)) +   
+  theme_gray() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "right"
+  )
+
+selected_columns <- SHP_27_RLI_combined %>%
+  st_drop_geometry() %>%
+  select(name, rli_original, rli_normalized, rli_difference)
+
+view(selected_columns)
+
+## Un valore positivo della differenza (rli_original - rli_normalized > 0) indica che il RLI originale attribuiva maggiore priorità alla conservazione per quel paese rispetto al nuovo metodo (normalizzato).
+## Al contrario, un valore negativo (rli_original - rli_normalized < 0) indica che la nuova metodologia considera quell’area più vulnerabile o più prioritaria rispetto all’indice originale.
+## In generale, queste differenze possono mostrare quali paesi potrebbero richiedere maggiore attenzione o investimenti nella conservazione, secondo i nuovi criteri.
