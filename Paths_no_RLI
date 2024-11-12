@@ -1,0 +1,332 @@
+library(dplyr)
+library(tibble)
+library(sf)
+library(terra)
+library(ggplot2)
+library(viridis)
+
+setwd("C:/Users/irene/Desktop")
+
+#3- senza RLI -> paths_no_RLI.shp
+
+#######################################################################################################################################
+############################################################## TOTAL paths ############################################################
+
+#################### lengths
+paths <- vect("IBA/files/paths_no_RLI.shp")
+paths <- st_as_sf(paths)
+paths$length_km <- as.numeric(st_length(paths)/ 1000)  
+paths_df <- as.data.frame(paths)
+summary(paths_df$length_km)
+total_lengths <- as.numeric(sum(paths$length_km, na.rm = TRUE)) 
+total_lengths
+
+ggplot(paths_df, aes(y = length_km)) +
+  geom_boxplot(fill = "darkred", color = "black") +
+  labs(title = "Paths length - No RLI", 
+       y = "Length (km)") +
+  theme_gray()
+
+st_write(paths, "IBA/temp/paths_no_RLI.shp", overwrite = TRUE)
+
+
+################## cost
+paths <- vect("IBA/temp/paths_no_RLI.shp")
+final_resistance_ita <- rast("IBA/files/final_resistance_ita_no_RLI.tiff")
+np_ita <- vect("IBA/files/np_ita.shp") 
+
+calculate_cost_for_paths <- function(paths, resistance_raster) {
+  path_costs <- numeric(nrow(paths))
+  for (i in 1:nrow(paths)) {
+    resistance_values <- terra::extract(resistance_raster, paths[i, ])
+    
+    cell_length <- 0.1  # km
+    
+    # Calculate the total cost for the path as the sum of (resistance * length)
+    total_cost <- sum(resistance_values[, 2] * cell_length, na.rm = TRUE)  
+    path_costs[i] <- total_cost
+  }
+  
+  # Return vector of costs
+  return(path_costs)
+}
+paths$costs <- calculate_cost_for_paths(paths, final_resistance_ita)
+# Calculate the cost per kilometer
+cost_per_km <- paths$costs / paths$length_km
+paths$cost_per_km <- cost_per_km 
+paths_df <- as.data.frame(paths)
+summary(paths$cost_per_km)
+paths$costs <- paths$costs/ 1e6 # solo per riuscire a salvare tutti i valori, altrimenti alcuni sono troppo grandi 
+
+ggplot(paths_df, aes(y = cost_per_km)) +
+  geom_boxplot(fill = "darkred", color = "black") +
+  labs(title = "Paths cost per km - No RLI", 
+       y = "Cost/km") +
+  theme_gray()
+
+
+########################## intersection with PAs
+iba_ita <- vect("IBA/files/iba_ita.shp")
+ita_pa <- vect("IBA/files/ita_pa.shp")
+ita_pa$ID <- 1:nrow(ita_pa)
+
+###### num_IBAs intersected x corridor
+intersections_iba <- terra::intersect(paths, iba_ita) %>% as.data.frame()
+
+iba_summary <- intersections_iba %>%
+  dplyr::group_by(FID) %>%
+  dplyr::summarise(
+    num_IBAs = n_distinct(CODICE_IBA)
+  )
+print(iba_summary)
+
+paths <- merge(paths, iba_summary, by.x = "FID", by.y = "FID", all.x = TRUE)
+paths_df <- as.data.frame(paths)
+summary(paths_df$num_IBAs)
+
+ggplot(paths_df, aes(y = num_IBAs)) +
+  geom_boxplot(fill = "darkred", color = "black") +
+  labs(title = "IBAs intersected per corridor - No RLI",
+       y = "Num of IBAs") +
+  theme_gray()
+
+####### num_PAs intersected x corridor
+intersections_pa <- terra::intersect(paths, ita_pa)
+intersections_pa <- as.data.frame(intersections_pa)
+
+pa_summary <- intersections_pa %>%
+  dplyr::group_by(FID) %>%
+  dplyr::summarise(
+    num_PAs = n_distinct(ID))
+print(pa_summary)
+
+paths <- merge(paths, pa_summary, by.x = "FID", by.y = "FID", all.x = TRUE)
+paths_df <- as.data.frame(paths)
+summary(paths_df$num_PAs)
+
+head(paths_df)
+#alla fine paths_df dovrebbe avere come colonne: FID / length_km / costs / cost_per_km / num_IBAs / num_PAs
+
+ggplot(paths_df, aes(y = num_PAs)) +
+  geom_boxplot(fill = "darkred", color = "black") +
+  labs(title = "PAs intersected by paths - No RLI",
+       y = "Num of PAs") +
+  theme_gray()
+
+writeVector(paths, "IBA/files/paths_no_RLI.shp", overwrite = TRUE)
+write.csv(paths_df, "IBA/files/paths_no_RLI.csv")
+
+
+####################################################################################################################################
+######################################################## DIRECT path ###############################################################
+
+################### length
+paths_union <- vect("IBA/files/paths_no_RLI_direct.shp") %>% st_as_sf()
+paths_union <- st_as_sf(paths_union)
+paths_union$lenght_km <- as.numeric(st_length(paths_union) / 1000) # Lunghezza totale in km
+st_write(paths_union, "IBA/temp/paths_no_RLI_direct.shp")
+
+################### costo 
+
+paths_union <- vect("IBA/temp/paths_no_RLI_direct.shp")
+
+calculate_cost_for_paths_direct <- function(path_union, resistance_raster) {
+  resistance_values <- terra::extract(resistance_raster, path_union)
+  
+  cell_length <- 100  
+  
+  total_cost <- sum(resistance_values[, 2] * cell_length, na.rm = TRUE)  # Exclude NA values
+  
+  return(total_cost)
+}
+
+# Apply the function to the single union path
+paths_union$cost <- calculate_cost_for_paths_direct(paths_union, final_resistance_ita)
+cost_per_km_union <- paths_union$cost / paths_union$lenght_km
+paths_union$cost_per_km <- cost_per_km_union
+paths_union_df <- as.data.frame(paths_union)
+paths_union$cost <- paths_union$cost / 1e6
+
+
+######################### intersections with PAs
+
+##### tot iba intersected
+
+intersections_iba_union <- terra::intersect(paths_union, iba_ita) %>% as.data.frame()
+paths_union$num_IBAs <- intersections_iba_union %>% distinct(CODICE_IBA) %>% nrow()
+
+######### total pas intersected
+
+intersections_pa_union <- terra::intersect(paths_union, ita_pa) %>% as.data.frame
+paths_union$num_PAs <- intersections_pa_union %>% distinct(ID) %>% nrow()
+paths_union_df <- as.data.frame(paths_union)
+
+writeVector(paths_union, "IBA/files/paths_no_RLI_direct.shp", overwrite = TRUE)
+write.csv(paths_union_df, "IBA/files/paths_no_RLI_direct.csv")
+
+
+
+####################### % land cover classes sul percorso diretto
+lc_ita <- vect("IBA/files/U2018_CLC2018_V2020_20u1.shp")
+lc_ita_class <- read.csv("IBA/files/CLC_legend.csv")
+lc_ita_class <- lc_ita_class %>% rename(Code_18 = CLC_CODE)
+lc_ita$Code_18 <- as.character(lc_ita$Code_18)
+lc_ita_class$Code_18 <- as.character(lc_ita_class$Code_18)
+lc_ita <- merge(lc_ita, lc_ita_class, by = "Code_18", all.x = TRUE)
+lc_ita_df <- as.data.frame(lc_ita)
+
+ita <- vect("IBA/files/ita.shp")
+r2 <- rast(ext(ita), resolution = c(100, 100))
+crs(r2) <- crs(ita) 
+raster_lc_ita <- rasterize(lc_ita, r2, field = "CLASS")
+lc_intersected <- terra::extract(raster_lc_ita, paths_union)
+
+lc_intersected_df <- as.data.frame(lc_intersected)
+
+lc_intersected_df <- lc_intersected_df[!is.na(lc_intersected_df$CLASS), ]
+
+total_cells <- nrow(lc_intersected_df)
+
+# Calcola il numero di celle per ciascuna classe e la percentuale sul totale
+
+class_names <- c("forest", "seminatural", "agriculture", "open_space", "water", "artificial")
+
+# Crea la distribuzione delle classi sostituendo i numeri con i nomi
+class_distribution <- lc_intersected_df %>%
+  dplyr::group_by(CLASS) %>%
+  dplyr::summarise(count = n(), .groups = 'drop') %>%
+  dplyr::mutate(percentage = (count / total_cells) * 100) %>%
+  dplyr::mutate(CLASS = class_names[CLASS])  # Sostituisce i numeri con i nomi
+
+# Rinomina la colonna CLASS per chiarezza
+colnames(class_distribution)[1] <- "class"
+
+# Stampare la tabella finale della distribuzione delle classi
+print(class_distribution)
+
+# Assicurati che `class` sia un fattore ordinato (facoltativo ma utile per l'ordine delle fette)
+class_distribution <- class_distribution %>%
+  dplyr::mutate(class = factor(class, levels = class))
+
+# Crea il grafico a torta utilizzando la palette viridis
+ggplot(class_distribution, aes(x = "", y = percentage, fill = class)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Land cover classes - No RLI") +
+  theme_void() +  # Rimuove assi e griglia per un aspetto pulito
+  scale_fill_viridis_d(option = "D")  # Usa la palette viridis discreta
+
+# oppure bar chart perchè più preciso
+ggplot(class_distribution, aes(x = class, y = percentage, fill = class)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")),  # Mostra percentuali arrotondate
+            vjust = -0.3,  # Posiziona il testo leggermente sopra le barre
+            color = "black", size = 3.5) +  # Imposta il colore e la dimensione del testo
+  labs(title = "Land cover distribution - No RLI", x = "Classes", y = "Percentage") +
+  theme_minimal() +
+  scale_fill_viridis_d(option = "D")
+
+
+############### n corridors x ibas sul percorso totale/ridondante
+corridors_per_iba <- intersections_iba %>%
+  dplyr::group_by(CODICE_IBA) %>%
+  dplyr::summarise(num_corridors = n_distinct(FID))
+
+# Aggiungi questa informazione come attributo al vettore `iba_ita`
+iba_corr <- merge(iba_ita, corridors_per_iba, by.x = "CODICE_IBA", by.y = "CODICE_IBA", all.x = TRUE)
+
+# Sostituisci eventuali NA in `num_corridors` con 0 per le IBA che non sono intersecate da alcun corridoio
+iba_corr$num_corridors[is.na(iba_corr$num_corridors)] <- 0
+
+write.csv(iba_corr_df, "IBA/IBA_corridors_no_RLI.csv", row.names = FALSE)
+plot(iba_corr_df$RLI, iba_corr_df$num_corridors,
+     xlab = "No RLI",
+     ylab = "Number of corridors")
+
+iba_corr_df <- read.csv("IBA_corridors_no_RLI.csv")
+
+# Correlation test
+correlation_test <- cor.test(iba_corr_df$RLI, iba_corr_df$num_corridors, method = "pearson")
+print(correlation_test)
+
+# Linear regression
+model <- lm(num_corridors ~ RLI, data = iba_corr_df)
+plot(iba_corr_df$RLI, iba_corr_df$num_corridors,
+     xlab = "No RLI",
+     ylab = "Number of corridors",
+     main = "Scatterplot with regression line")
+
+# Add the regression line to the plot
+abline(model, col = "red", lwd = 2)
+
+
+############################################################
+
+df_RLI_org <- read.csv("IBA/files/paths_RLI_org.csv")
+df_RLI_mod <- read.csv("IBA/files/paths_RLI_mod.csv")
+df_no_RLI <- read.csv("IBA/files/paths_no_RLI.csv")
+df_RLI_org$cat <- "RLI_org" 
+df_RLI_mod$cat <- "RLI_mod" 
+df_no_RLI$cat <- "no_RLI"
+
+df <- rbind(df_RLI_org, df_RLI_mod, df_no_RLI)
+# df ha 325+325+325 righe 
+
+df_RLI_org_union <- read.csv("IBA/files/paths_RLI_org_direct.csv")
+df_RLI_mod_union <- read.csv("IBA/files/paths_RLI_mod_direct.csv")
+df_no_RLI_union <- read.csv("IBA/files/paths_no_RLI_direct.csv")
+df_RLI_org_union$cat <- "RLI_org" 
+df_RLI_mod_union$cat <- "RLI_mod" 
+df_no_RLI_union$cat <- "no_RLI" 
+
+df_union <- rbind(df_RLI_org_union, df_RLI_mod_union, df_no_RLI_union)
+# df_union ha 3 righe
+
+colnames(df_RLI_org_union)
+colnames(df_RLI_mod_union)
+colnames(df_no_RLI_union)
+
+colnames(df_RLI_mod_union) <- colnames(df_RLI_org_union)
+colnames(df_no_RLI_union) <- colnames(df_RLI_org_union)
+
+df_union <- rbind(df_RLI_org_union, df_RLI_mod_union, df_no_RLI_union)
+
+ggplot(df, aes(x = "", y = length_km)) +  
+  geom_boxplot(fill = "red", color = "black") +
+  labs(title = "Paths length", 
+       y = "Lenght (km)") +
+  ylim(0, 2000) +
+  facet_wrap(~ cat, nrow = 1, ncol = 3, scales = "free_x") +  
+  theme_gray() +
+  theme(axis.text.x = element_blank(),  
+        axis.ticks.x = element_blank())
+
+ggplot(df, aes(x = "", y = cost_per_km)) +  
+  geom_boxplot(fill = "red", color = "black") +
+labs(title = "Paths cost per km", 
+     y = "Cost/km") +
+  ylim(10000, 400000) +
+  facet_wrap(~ cat, nrow = 1, ncol = 3, scales = "free_x") + 
+  theme_gray() +
+  theme(axis.text.x = element_blank(),  
+        axis.ticks.x = element_blank())  
+
+ggplot(df, aes(x = "", y = num_IBAs)) +  
+  geom_boxplot(fill = "red", color = "black") +
+  labs(title = "Num of IBAs intersected", 
+       y = "IBAs") +
+  ylim(0, 40) +
+  facet_wrap(~ cat, nrow = 1, ncol = 3, scales = "free_x") +  
+  theme_gray() +
+  theme(axis.text.x = element_blank(),  
+        axis.ticks.x = element_blank())
+
+ggplot(df, aes(x = "", y = num_PAs)) +  
+  geom_boxplot(fill = "red", color = "black") +
+  labs(title = "Num of PAs intersected", 
+       y = "PAs") +
+  ylim(0, 200) +
+  facet_wrap(~ cat, nrow = 1, ncol = 3, scales = "free_x") +  
+  theme_gray() +
+  theme(axis.text.x = element_blank(),  
+        axis.ticks.x = element_blank())
