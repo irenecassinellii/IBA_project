@@ -59,12 +59,14 @@ RLI_AT <- rbind(pre_RLI_AT, RLI_row)
 
 write.csv(RLI_AT, file = "RLI_AT.csv", row.names = FALSE)
 
-df <- read.csv("C:/Users/irene/Desktop/IBA/RLI_AT.csv")
-colnames(df)[4:ncol(df)] <- sprintf("IBA%03d", 1:(ncol(df) - 3))
+df <- read.csv("C:/Users/irene/Desktop/IBA/og_RLI_IT.csv")
+original_column_numbers <- str_extract(colnames(df)[4:ncol(df)], "\\d+")
+
+colnames(df)[4:ncol(df)] <- sprintf("IBA%03d", as.numeric(original_column_numbers))
 red_list_index_values <- df[nrow(df), 4:ncol(df)]
 
 df_final <- data.frame(
   IBA = names(red_list_index_values),
   Red_List_Index = as.numeric(red_list_index_values)
 )
-write.csv(df_final, file = "C:/Users/irene/Desktop/IBA/RLI_AT.csv")
+write.csv(df_final, file = "C:/Users/irene/Desktop/IBA/og_RLI_IT.csv")
